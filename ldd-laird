@@ -1,0 +1,71 @@
+#!/bin/zsh
+########################################################################
+# vim: ts=4 sw=4
+########################################################################
+# NAME
+#   ldd-laird - display required RPMs needed for executables
+#
+# SYNOPSIS
+#   ldd-laird [exec-path...]
+#
+# DESCRIPTION
+#   Given a list of executable paths via stdin or the command line,  show
+#   a list of their associated RPM's and those of any shared libraries
+#   they use directly.  Indirectly used RPM's are not expanded.
+#
+# OPTIONS
+#   exec-path		Path to executable to be examined.
+########################################################################
+process()	{
+	awk	'
+	function rpm_for_file( fn,		cmd, n, owner, parts, rpm )	{
+		cmd = "/bin/rpm -qf " fn
+		cmd | getline owner
+		close( cmd )
+		# printf "# ==> %s\n", owner
+		n = split( owner, parts )
+		if( n == 1 )	{
+			rpm = parts[ 1 ]
+		} else	{
+			rpm = ""
+		}
+		return( rpm )
+	}
+	function handle( path,			cmd, rpm )	{
+		# Record info about this particular executable
+		rpm = rpm_for_file( path )
+		++rpms[ rpm ]
+		# Find the RPM for anything it loads
+		cmd = "/usr/bin/ldd " path
+		while( cmd | getline line > 0 )	{
+			n = split( line, args )
+			if( args[2] == "=>" )	{
+				fn = args[ 3 ]
+			} else	{
+				fn = args[ 1 ]
+			}
+			rpm = rpm_for_file( fn )
+			++rpms[ rpm ]
+		}
+		close( cmd )
+		return( 0 )
+	}
+	BEGIN	{
+	}
+	/./		{
+		for( i = 1; i <= NF; ++i )	{
+			handle( $i )
+		}
+	}
+	END		{
+		for( rpm in rpms )	{
+			print rpm, rpms[ rpm ]
+		}
+	}
+	'
+}
+if [ $# -gt 0 ]; then
+	echo "${@}" | xargs -n1 | process
+else
+	process
+fi
